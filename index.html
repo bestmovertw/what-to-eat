@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今天吃什麼？ | What to eat today?</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f4f7f6;
+            margin: 0;
+            text-align: center;
+            color: #333;
+            position: relative;
+        }
+        
+        /* 語言切換按鈕樣式 */
+        #lang-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 15px;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #lang-toggle:hover { background-color: #555; }
+
+        h1 { margin-bottom: 10px; }
+        .step-text { margin-bottom: 20px; font-weight: bold; }
+        
+        .category-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 600px;
+            margin-bottom: 30px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            background-color: #007bff;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn.selected { background-color: #28a745; }
+        
+        #dice-section {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .dice {
+            font-size: 80px;
+            cursor: pointer;
+            user-select: none;
+            animation: bounce 2s infinite;
+        }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-15px); }
+            60% { transform: translateY(-7px); }
+        }
+        .rolling {
+            animation: roll 0.5s infinite linear !important;
+            cursor: not-allowed;
+        }
+        @keyframes roll {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #result {
+            margin-top: 30px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #d9534f;
+            display: none;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        #status { margin-top: 10px; color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <button id="lang-toggle" onclick="toggleLanguage()">Switch to English</button>
+
+    <h1 id="title">今天吃什麼？</h1>
+    <p class="step-text" id="step1-text">1. 請選擇您想吃的種類：</p>
+    
+    <div class="category-container" id="categories">
+        <!-- 按鈕透過 JavaScript 動態生成 -->
+    </div>
+
+    <div id="dice-section">
+        <p class="step-text" id="step2-text">2. 點擊骰子開始尋找附近美食！</p>
+        <div class="dice" id="dice" onclick="rollDice()">🎲</div>
+        <div id="status"></div>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        // 語系字典
+        const translations = {
+            zh: {
+                toggleBtn: "Switch to English",
+                title: "今天吃什麼？",
+                step1: "1. 請選擇您想吃的種類：",
+                step2: "2. 點擊骰子開始尋找附近美食！",
+                categories: [
+                    { id: 'breakfast', label: "早餐店", regex: "早|早餐|美而美|麥味登|拉亞" },
+                    { id: 'hotpot', label: "火鍋店", regex: "火鍋|鍋|涮" },
+                    { id: 'japanese', label: "日本料理", regex: "壽司|日式|生魚片|丼" },
+                    { id: 'beefNoodle', label: "牛肉麵", regex: "牛肉麵" },
+                    { id: 'ramen', label: "拉麵店", regex: "拉麵" },
+                    { id: 'steak', label: "牛排館", regex: "牛排|鐵板燒" },
+                    { id: 'traditional', label: "傳統小吃", regex: "小吃|麵店|滷肉飯|水餃|肉圓|臭豆腐" }
+                ],
+                statusLocating: "正在定位您的位置...",
+                statusSearching: (cat) => `正在開源地圖搜尋附近 1 公里內的 ${cat}...`,
+                statusDone: "搜尋完成！",
+                resultHeader: "為您決定吃：",
+                resultNoRating: "(此為開源地圖資料，無評分系統)",
+                resultMapBtn: "在 Google Maps 上查看路線",
+                errNoResult: "附近找不到符合條件的餐廳，請換個種類試試！",
+                errServer: "地圖伺服器請求失敗，請稍後再試。",
+                errPerm: "您拒絕了位置權限請求，無法搜尋附近餐廳。",
+                errUnavail: "位置資訊不可用。",
+                errTimeout: "請求位置超時。",
+                errUnknown: "發生未知錯誤。"
+            },
+            en: {
+                toggleBtn: "切換為中文",
+                title: "What to eat today?",
+                step1: "1. Select a category:",
+                step2: "2. Click the dice to find nearby food!",
+                categories: [
+                    { id: 'breakfast', label: "Breakfast", regex: "breakfast|cafe|bakery|brunch" },
+                    { id: 'hotpot', label: "Hot Pot", regex: "hotpot|shabu" },
+                    { id: 'japanese', label: "Japanese", regex: "sushi|japanese|sashimi|donburi" },
+                    { id: 'beefNoodle', label: "Beef Noodles", regex: "beef noodle" },
+                    { id: 'ramen', label: "Ramen", regex: "ramen" },
+                    { id: 'steak', label: "Steakhouse", regex: "steak|teppanyaki" },
+                    { id: 'traditional', label: "Local Food", regex: "local|dumpling|noodle|street food" }
+                ],
+                statusLocating: "Locating your position...",
+                statusSearching: (cat) => `Searching open maps for ${cat} within 1km...`,
+                statusDone: "Search complete!",
+                resultHeader: "You are going to eat at:",
+                resultNoRating: "(Open-source map data, no rating system)",
+                resultMapBtn: "View route on Google Maps",
+                errNoResult: "No matching restaurants found nearby. Try another category!",
+                errServer: "Map server request failed. Please try again later.",
+                errPerm: "Location permission denied. Cannot search for nearby restaurants.",
+                errUnavail: "Location information is unavailable.",
+                errTimeout: "Location request timed out.",
+                errUnknown: "An unknown error occurred."
+            }
+        };
+
+        let currentLang = 'zh';
+        let selectedCategoryId = "";
+        let selectedCategoryLabel = "";
+        let selectedCategoryRegex = "";
+
+        const dice = document.getElementById('dice');
+        const statusText = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const categoriesDiv = document.getElementById('categories');
+
+        // 初始化頁面
+        function initPage() {
+            updateLanguageUI();
+        }
+
+        // 切換語言
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            updateLanguageUI();
+            
+            // 重置狀態
+            document.getElementById('dice-section').style.display = 'none';
+            resultDiv.style.display = 'none';
+            statusText.innerText = '';
+            selectedCategoryId = "";
+        }
+
+        // 更新介面文字
+        function updateLanguageUI() {
+            const t = translations[currentLang];
+            
+            document.getElementById('lang-toggle').innerText = t.toggleBtn;
+            document.getElementById('title').innerText = t.title;
+            document.getElementById('step1-text').innerText = t.step1;
+            document.getElementById('step2-text').innerText = t.step2;
+
+            // 重新生成按鈕
+            categoriesDiv.innerHTML = '';
+            t.categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                if (cat.id === selectedCategoryId) btn.classList.add('selected');
+                btn.innerText = cat.label;
+                btn.onclick = () => selectCategory(cat.id, cat.label, cat.regex, btn);
+                categoriesDiv.appendChild(btn);
+            });
+        }
+
+        function selectCategory(id, label, regex, btnElement) {
+            selectedCategoryId = id;
+            selectedCategoryLabel = label;
+            selectedCategoryRegex = regex;
+            
+            document.querySelectorAll('.btn').forEach(btn => btn.classList.remove('selected'));
+            btnElement.classList.add('selected');
+            
+            document.getElementById('dice-section').style.display = 'flex';
+            resultDiv.style.display = 'none';
+            statusText.innerText = '';
+        }
+
+        function rollDice() {
+            if (!selectedCategoryId) return;
+            if (dice.classList.contains('rolling')) return;
+
+            const t = translations[currentLang];
+            dice.classList.add('rolling');
+            resultDiv.style.display = 'none';
+            statusText.innerText = t.statusLocating;
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(searchOSMPlaces, handleError);
+            } else {
+                showError(currentLang === 'zh' ? "您的瀏覽器不支援地理定位功能。" : "Geolocation is not supported by your browser.");
+            }
+        }
+
+        async function searchOSMPlaces(position) {
+            const t = translations[currentLang];
+            statusText.innerText = t.statusSearching(selectedCategoryLabel);
+            
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+
+            // 如果是英文版，因為台灣的 OSM 店名多半是中文，我們同時搜尋英文標籤和原標籤的正則表達式
+            // 為了確保在台灣使用英文版時也能搜到店，我們將中文版的正則表達式也混入查詢中 (可選)
+            let finalRegex = selectedCategoryRegex;
+            if(currentLang === 'en') {
+                const zhCat = translations.zh.categories.find(c => c.id === selectedCategoryId);
+                if(zhCat) finalRegex = `${selectedCategoryRegex}|${zhCat.regex}`;
+            }
+
+            const query = `
+                [out:json][timeout:15];
+                nwr(around:1000, ${lat}, ${lng})["name"~"${finalRegex}", i];
+                out center;
+            `;
+
+            try {
+                const response = await fetch(`https://overpass-api.de/api/interpreter`, {
+                    method: 'POST',
+                    body: query
+                });
+                
+                const data = await response.json();
+                let results = data.elements.filter(el => el.tags && (el.tags.name || el.tags['name:en']));
+
+                if (results.length > 0) {
+                    results = results.sort(() => 0.5 - Math.random());
+                    const top5 = results.slice(0, 5);
+                    const chosenRestaurant = top5[Math.floor(Math.random() * top5.length)];
+                    
+                    const resLat = chosenRestaurant.lat || chosenRestaurant.center.lat;
+                    const resLng = chosenRestaurant.lon || chosenRestaurant.center.lon;
+                    
+                    // 優先顯示英文名，如果沒有則顯示原名
+                    const displayName = (currentLang === 'en' && chosenRestaurant.tags['name:en']) 
+                                        ? chosenRestaurant.tags['name:en'] 
+                                        : chosenRestaurant.tags.name;
+
+                    setTimeout(() => {
+                        dice.classList.remove('rolling');
+                        statusText.innerText = t.statusDone;
+                        resultDiv.style.display = 'block';
+                        resultDiv.innerHTML = `
+                            ${t.resultHeader}<br> 
+                            <span style="font-size: 32px; color: #d9534f;">${displayName}</span><br>
+                            <span style="font-size: 16px; color: #555;">${t.resultNoRating}</span><br>
+                            <a href="https://www.google.com/maps/search/?api=1&query=${resLat},${resLng}" target="_blank" style="display:inline-block; margin-top:15px; font-size:16px; text-decoration:none; color:white; background:#28a745; padding:8px 15px; border-radius:5px;">${t.resultMapBtn}</a>
+                        `;
+                    }, 1500);
+                } else {
+                    showError(t.errNoResult);
+                }
+            } catch (error) {
+                showError(t.errServer);
+            }
+        }
+
+        function handleError(error) {
+            const t = translations[currentLang];
+            switch(error.code) {
+                case error.PERMISSION_DENIED: showError(t.errPerm); break;
+                case error.POSITION_UNAVAILABLE: showError(t.errUnavail); break;
+                case error.TIMEOUT: showError(t.errTimeout); break;
+                default: showError(t.errUnknown); break;
+            }
+        }
+
+        function showError(msg) {
+            dice.classList.remove('rolling');
+            statusText.innerText = "";
+            resultDiv.style.display = 'block';
+            resultDiv.style.color = 'red';
+            resultDiv.innerHTML = msg;
+        }
+
+        // 啟動
+        initPage();
+    </script>
+</body>
+</html>
